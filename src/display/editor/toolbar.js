@@ -13,7 +13,10 @@
  * limitations under the License.
  */
 
-import { noContextMenu, stopEvent } from "../display_utils.js";
+import {noContextMenu, stopEvent} from "../display_utils.js";
+import MarkdownIt from 'https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/+esm'
+
+const md = new MarkdownIt();
 
 class EditorToolbar {
   #toolbar = null;
@@ -176,12 +179,203 @@ class EditorToolbar {
   }
 }
 
+class AiHelp{
+  #uiManager;
+  #buttons
+  #selectedTextDom
+  #aiTextDom
+  #closeBtn
+  #sideBarTitleDom
+  #sideBarDom
+  loading=false
+  #abortController
+  #aiContent
+  #btn
+  #editToolbar
+  constructor(uiManager,buttons,editToolbar) {
+    this.#uiManager = uiManager;
+    this.#buttons = buttons;
+    this.#editToolbar = editToolbar
+    this.#sideBarDom = this.#renderPdfSideBar()
+
+    this.#selectedTextDom = this.#sideBarDom.querySelector('.selectedText')
+    this.#aiTextDom = this.#sideBarDom.querySelector('.aiText')
+    this.#sideBarTitleDom = this.#sideBarDom.querySelector('.sideBarTitle')
+    this.#closeBtn = this.#sideBarDom.querySelector('.closeBtn')
+
+    this.#closeBtn.addEventListener('click', this.#close.bind(this))
+  }
+  #updateAiText(world) {
+    this.#aiContent += world
+    this.#aiTextDom.innerHTML = md.render(this.#aiContent);
+  }
+  #updateSelectedText(text){
+    this.#selectedTextDom.textContent = text;
+  }
+  #open(selectionText){
+    this.#selectedTextDom.textContent = ''
+    this.#aiTextDom.innerHTML = ''
+    this.#aiContent = ''
+    this.#editToolbar.remove()
+    this.#sideBarDom.style.transform = 'translateX(0)'
+    if(selectionText){
+      this.#abortController = new AbortController()
+      this.#aiContent = ''
+      this.askAi(selectionText,this.#abortController)
+    }
+  }
+  #close(){
+    this.#sideBarDom.style.transform = 'translateX(100%)'
+    if(this.#abortController){
+      this.#abortController.abort()
+    }
+  }
+  #showLoading(){
+   this.loading = true
+   this.#sideBarTitleDom.textContent = this.#sideBarTitleDom.textContent + '(正在回答)'
+  }
+  #hideLoading(){
+    this.loading = false
+    this.#sideBarTitleDom.textContent = '解释内容'
+  }
+  async askAi(text){
+    if(this.loading) return
+    try{
+      const prompt = `
+      ${text}
+      以上是一本书的一部分文字，你需要站在一个新手的角度上，学习以上文字，你可以尽可能联想，猜测可能存在的问题与疑问，然后给出答案
+      `
+      if(this.#abortController?.aborted) return Promise.reject({type:'aborted'});
+      this.#showLoading()
+      this.#updateSelectedText(text)
+      const baseUrl = 'https://qianfan.baidubce.com/v2'
+      const respStream = await fetch('https://ai-proxy-xulbdqvsbn.cn-hongkong.fcapp.run/chat/completions', {
+        method: 'POST',
+        headers: {
+          'x-base-url': baseUrl,
+          'x-api-key': 'YmNlLXYzL0FMVEFLLXAzRE02TldkVERKSXpKRDVYM1VvMC85ZjA5NmQ4YWE4MzZhZDU0MzA0ZGNkMGUxMGQ4ODk1ZGJhNzEzNDky',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: "deepseek-v3",
+          messages: [{
+            role: "user",
+            content: prompt
+          }],
+          stream: true
+        }),
+        signal: this.#abortController.signal,
+      })
+
+      if(this.#abortController?.aborted) return Promise.reject({type:'aborted'});
+
+      const reader = respStream.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        if(chunk.startsWith('data: ')){
+          const lines = chunk.split('data:').filter(line => !!line).map(line=> {
+            if(/\s*\[DONE\]\n*/.test(line)) return '[DONE]';
+            return JSON.parse(line.trim())
+          })
+          lines.forEach(line => {
+            if(line !== '[DONE]'){
+              const {reasoning_content, content} = line.choices[0].delta
+              if(reasoning_content){
+                console.log(reasoning_content);
+              }
+              if(content){
+                console.log(content);
+                this.#updateAiText(content);
+              }
+            }
+            else {
+              console.log('done');
+            }
+          })
+        }
+        else{
+          console.log('error', chunk);
+          this.#updateAiText(chunk);
+        }
+      }
+    } catch (e){
+
+    } finally {
+      this.#hideLoading();
+    }
+
+  }
+  #onBtnClick(e){
+    const selection = document.getSelection();
+    if (!selection || selection.isCollapsed) {
+      return;
+    }
+    const selectionText = selection.toString();
+    this.#open(selectionText)
+  }
+  #removeButton(){
+    this.#buttons.removeChild(this.#btn)
+  }
+  addButton(){
+    if(this.#btn) return
+    const button = document.createElement("button");
+    this.#btn = button
+    button.textContent = "help";
+    button.title = "我是新手";
+    button.tabIndex = 1;
+    button.style.padding = '0 5px'
+    const span = document.createElement("span");
+    button.append(span);
+    const signal = this.#uiManager._signal;
+    button.addEventListener("contextmenu", noContextMenu, { signal });
+    button.addEventListener(
+      "click",
+      this.#onBtnClick.bind(this),
+      { signal }
+    );
+    this.#buttons.append(button);
+  }
+  #renderPdfSideBar(){
+    const container = document.createElement('div')
+    container.style.cssText = `width: 384px; background-color: white; border-left: 1px solid rgb(229, 231, 235); position: fixed; top: 32px; bottom: 50px ;right: 0px; transform: translateX(100%) ;transition: transform 0.3s ease-in-out; display: flex; flex-direction: column;`
+    container.innerHTML = `
+      <div style="padding: 16px; border-bottom: 1px solid rgb(229, 231, 235); display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="margin: 0px; font-weight: 500;" class="sideBarTitle">解释内容</h3>
+        <button class="closeBtn" style="background: none; border: none; cursor: pointer; padding: 4px;">✕</button>
+      </div>
+      <div style="flex: 1 1 0%; overflow: auto; padding: 16px;">
+        <div style="margin-top: 0px;">
+            <div style="padding: 12px; background-color: rgb(249, 250, 251); border-radius: 8px; margin-bottom: 16px;">
+                <p style="margin: 0px 0px 4px; font-size: 14px; color: rgb(107, 114, 128);">
+                    选中文字：
+                </p>
+                <p class="selectedText" style="margin: 0px; font-weight: 500;">
+
+                </p>
+            </div>
+            <div class="aiText" style="white-space: pre-wrap; line-height: 1.6;">
+
+            </div>
+        </div>
+      </div>
+    `
+    document.body.appendChild(container);
+    return container
+  }
+}
+
 class HighlightToolbar {
   #buttons = null;
 
   #toolbar = null;
 
   #uiManager;
+  #aiHelp
 
   constructor(uiManager) {
     this.#uiManager = uiManager;
@@ -200,6 +394,10 @@ class HighlightToolbar {
     editToolbar.append(buttons);
 
     this.#addHighlightButton();
+    if(!this.#aiHelp){
+      this.#aiHelp = new AiHelp(this.#uiManager, this.#buttons,editToolbar);
+    }
+    this.#aiHelp.addButton()
 
     return editToolbar;
   }
