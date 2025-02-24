@@ -867,7 +867,8 @@ class AnnotationEditorUIManager {
     this.#filterFactory = pdfDocument.filterFactory;
     this.#pageColors = pageColors;
     this.#highlightColors = highlightColors || null;
-    this.#enableHighlightFloatingButton = enableHighlightFloatingButton;
+    // this.#enableHighlightFloatingButton = enableHighlightFloatingButton;
+    this.#enableHighlightFloatingButton = true;
     this.#enableUpdatedAddImage = enableUpdatedAddImage;
     this.#enableNewAltTextWhenAddingImage = enableNewAltTextWhenAddingImage;
     this.#mlManager = mlManager || null;
@@ -1259,6 +1260,7 @@ class AnnotationEditorUIManager {
   }
 
   #onSelectEnd(methodOfCreation = "") {
+    debugger
     if (this.#mode === AnnotationEditorType.HIGHLIGHT) {
       this.highlightSelection(methodOfCreation);
     } else if (this.#enableHighlightFloatingButton) {
