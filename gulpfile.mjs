@@ -1103,7 +1103,7 @@ function buildGeneric(defines, dir) {
       .pipe(gulp.dest(dir + "web")),
 
     gulp
-      .src("web/JavaScript.Advanced.Programming(4th.Edition).pdf", { encoding: false })
+      .src("web/*.pdf", { encoding: false })
       .pipe(gulp.dest(dir + "web")),
   ]);
 }
