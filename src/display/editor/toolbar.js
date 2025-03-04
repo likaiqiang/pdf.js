@@ -212,6 +212,21 @@ class AiHelp{
   #updateSelectedText(text){
     this.#selectedTextDom.textContent = text;
   }
+  async #getPdfOutline() {
+    const outline = await window.PDFViewerApplication.pdfDocument.getOutline();
+
+    // function buildOutlineTree(outlineItems) {
+    //   if (!outlineItems) return [];
+    //   return outlineItems.map(item => ({
+    //     title: item.title,
+    //     items: buildOutlineTree(item.items) // 递归处理子目录
+    //   }));
+    // }
+
+    // return buildOutlineTree(outline);
+    if (!outline) return [];
+    return outline.map(item=> item.title)
+  }
   #open(selectionText){
     this.#selectedTextDom.textContent = ''
     this.#aiTextDom.innerHTML = ''
@@ -241,9 +256,12 @@ class AiHelp{
   async askAi(text){
     if(this.loading) return
     try{
+      const outline = await this.#getPdfOutline()
       const prompt = `
       ${text}
-      以上是一本书的一部分文字，你需要站在一个新手的角度上，学习以上文字，你可以尽可能联想，猜测可能存在的问题与疑问，然后给出答案
+      1. 以上是一本书的一部分文字，你需要站在一个新手的角度上，学习以上文字，你可以尽可能联想，猜测可能存在的问题与疑问，然后给出答案
+      2. 知识不是独立存在的，以下是这本书的目录，你可以尽可能的联想，找出给出文字与其他知识的联系
+      ${JSON.stringify(outline)}
       `
       if(this.#abortController?.aborted) return Promise.reject({type:'aborted'});
       this.#showLoading()
